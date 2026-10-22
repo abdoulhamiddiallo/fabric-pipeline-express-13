@@ -1,0 +1,87 @@
+PIPELINE 13 : LES FERRIES DE NORVÈGE, UN PIPELINE QUI RANGE DERRIÈRE LUI
+Chaque valeur est sur sa propre ligne : copiez la ligne entière, sans le titre entre crochets.
+
+==================== Objets ====================
+
+[Espace de travail]
+Fabric_Pipeline_13
+
+[Lakehouse (sans schémas)]
+LH_Ferje
+
+[Dossier dans Fichiers]
+crossings
+
+[Entrepôt]
+WH_Ferje
+
+[Pipeline]
+PL_Ferje
+
+==================== Land crossings (Copy data, chemin générique) ====================
+
+[Nom de l'activité]
+Land crossings
+
+[Source : dossier]
+crossings
+
+[Source : nom de fichier générique]
+*.csv
+
+[Destination : nouvelle table, action Remplacer]
+crossings
+
+==================== Connexion partagée ====================
+
+[Connexion Lakehouse, compte d'organisation : nom]
+CN_Lakehouse
+
+==================== Compact table (Lakehouse maintenance) ====================
+
+[Nom de l'activité]
+Compact table
+
+[Nom de la table]
+crossings
+
+[Opération]
+Optimize
+
+==================== Refresh endpoint (Refresh SQL analytics endpoint) ====================
+
+[Nom de l'activité]
+Refresh endpoint
+
+==================== Fjord board (Script sur WH_Ferje, type Requête) ====================
+
+[Nom de l'activité]
+Fjord board
+
+[Script : les deux requêtes, collées en une fois]
+WITH c AS (SELECT route, CAST(passengers AS int) AS pax, CAST(cars AS int) AS cars, CAST(energy_kwh AS int) AS kwh, CAST(battery_end_pct AS int) AS batt FROM LH_Ferje.dbo.crossings) SELECT COUNT(*) AS crossings, SUM(pax) AS passengers, SUM(cars) AS cars, CAST(SUM(kwh) / 1000.0 AS decimal(8,1)) AS mwh, CAST(SUM(kwh) * 1.0 / SUM(cars) AS decimal(6,2)) AS kwh_per_car, MIN(batt) AS min_battery FROM c;
+WITH c AS (SELECT route, CAST(cars AS int) AS cars, CAST(energy_kwh AS int) AS kwh FROM LH_Ferje.dbo.crossings), r AS (SELECT route, CAST(SUM(kwh) * 1.0 / SUM(cars) AS decimal(6,2)) AS kwh_per_car FROM c GROUP BY route) SELECT (SELECT TOP 1 route FROM r ORDER BY kwh_per_car ASC) AS best_route, MIN(kwh_per_car) AS best_kwh, (SELECT TOP 1 route FROM r ORDER BY kwh_per_car DESC) AS worst_route, MAX(kwh_per_car) AS worst_kwh FROM r;
+
+==================== Post fjord report (Microsoft Teams) ====================
+
+[Nom de l'activité]
+Post fjord report
+
+[Titre]
+Ferries de Norvège
+
+[Message (contenu dynamique)]
+Ferries de l'ouest norvégien, semaine du 12 au 18 octobre : @{activity('Fjord board').output.resultSets[0].rows[0].crossings} traversées, @{activity('Fjord board').output.resultSets[0].rows[0].passengers} passagers, @{activity('Fjord board').output.resultSets[0].rows[0].cars} voitures, @{activity('Fjord board').output.resultSets[0].rows[0].mwh} MWh. En moyenne @{activity('Fjord board').output.resultSets[0].rows[0].kwh_per_car} kWh par voiture. La plus sobre : @{activity('Fjord board').output.resultSets[1].rows[0].best_route} (@{activity('Fjord board').output.resultSets[1].rows[0].best_kwh}), la plus gourmande : @{activity('Fjord board').output.resultSets[1].rows[0].worst_route} (@{activity('Fjord board').output.resultSets[1].rows[0].worst_kwh}). Batterie la plus basse à l'arrivée : @{activity('Fjord board').output.resultSets[0].rows[0].min_battery} %.
+
+==================== Plan B ====================
+
+[Plan B maintenance : cellule du notebook NB_Ferje]
+spark.sql("OPTIMIZE crossings")
+
+[Plan B rafraîchissement : Wait, secondes]
+90
+
+==================== Vérifier dans WH_Ferje ====================
+
+[Contrôle]
+SELECT route, COUNT(*) AS traversees, SUM(CAST(cars AS int)) AS voitures, CAST(SUM(CAST(energy_kwh AS int)) * 1.0 / SUM(CAST(cars AS int)) AS decimal(6,2)) AS kwh_par_voiture FROM LH_Ferje.dbo.crossings GROUP BY route ORDER BY kwh_par_voiture;
