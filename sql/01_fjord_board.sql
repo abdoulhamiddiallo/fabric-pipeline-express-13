@@ -1,0 +1,5 @@
+-- Fjord board : les deux requêtes du Script, sur l'entrepôt WH_Ferje (type Requête)
+-- Résultat 0 : la semaine en une ligne (traversées, passagers, voitures, MWh, kWh par voiture, batterie la plus basse)
+-- Résultat 1 : la liaison la plus sobre et la plus gourmande en kWh par voiture
+WITH c AS (SELECT route, CAST(passengers AS int) AS pax, CAST(cars AS int) AS cars, CAST(energy_kwh AS int) AS kwh, CAST(battery_end_pct AS int) AS batt FROM LH_Ferje.dbo.crossings) SELECT COUNT(*) AS crossings, SUM(pax) AS passengers, SUM(cars) AS cars, CAST(SUM(kwh) / 1000.0 AS decimal(8,1)) AS mwh, CAST(SUM(kwh) * 1.0 / SUM(cars) AS decimal(6,2)) AS kwh_per_car, MIN(batt) AS min_battery FROM c;
+WITH c AS (SELECT route, CAST(cars AS int) AS cars, CAST(energy_kwh AS int) AS kwh FROM LH_Ferje.dbo.crossings), r AS (SELECT route, CAST(SUM(kwh) * 1.0 / SUM(cars) AS decimal(6,2)) AS kwh_per_car FROM c GROUP BY route) SELECT (SELECT TOP 1 route FROM r ORDER BY kwh_per_car ASC) AS best_route, MIN(kwh_per_car) AS best_kwh, (SELECT TOP 1 route FROM r ORDER BY kwh_per_car DESC) AS worst_route, MAX(kwh_per_car) AS worst_kwh FROM r;
